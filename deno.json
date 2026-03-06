@@ -1,0 +1,21 @@
+{
+  "name": "premium-store-bot",
+  "version": "2.0.0",
+  "exports": "./bot.ts",
+  "tasks": {
+    "start": "deno run --allow-net --allow-env --allow-read bot.ts",
+    "dev": "deno run --allow-net --allow-env --allow-read --watch bot.ts"
+  },
+  "compilerOptions": {
+    "lib": ["deno.ns", "dom"]
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "indentWidth": 2,
+    "lineWidth": 100
+  }
+}
