@@ -1,6 +1,6 @@
 /**
  * Premium Store Telegram Bot - Deno Deploy Version
- * Serverless bot for Hugging Face Spaces or Deno Deploy
+ * Serverless bot for premium clothing store
  */
 import {
   Bot,
@@ -10,7 +10,7 @@ import {
   webhookCallback,
 } from "https://deno.land/x/grammy@v1.19.0/mod.ts";
 
-import { config, isWebhook, PRODUCTS, CATEGORIES } from "./config.ts";
+import { config, isWebhook, PRODUCTS, CATEGORIES, ITEMS_PER_PAGE } from "./config.ts";
 import {
   initPool,
   getPool,
@@ -56,6 +56,7 @@ const userContext = new Map<number, {
   category?: string;
   page?: number;
   currentProduct?: string;
+  waitingForMessage?: boolean;
   replyRequestId?: number;
 }>();
 
@@ -88,6 +89,39 @@ function getProductById(productId: string) {
   return null;
 }
 
+// Helper: Show products page
+async function showProductsPage(ctx: Context, category: string, page: number): Promise<void> {
+  const products = PRODUCTS[category] || [];
+  const totalPages = products.length > 0 
+    ? Math.ceil(products.length / ITEMS_PER_PAGE) 
+    : 1;
+  
+  if (page < 0) page = 0;
+  if (page >= totalPages) page = totalPages - 1;
+  
+  const startIdx = page * ITEMS_PER_PAGE;
+  const endIdx = startIdx + ITEMS_PER_PAGE;
+  const pageProducts = products.slice(startIdx, endIdx);
+  
+  const categoryName = CATEGORIES[category] || category;
+  let text = `📂 ${categoryName}\nСтраница ${page + 1} из ${totalPages}\n\n`;
+  
+  for (let i = startIdx + 1; i <= Math.min(endIdx, products.length); i++) {
+    const product = products[i - 1];
+    text += `${i}. ${product.name} — ${product.price}₽\n`;
+  }
+  
+  try {
+    await ctx.editMessageText(text, {
+      reply_markup: keyboards.getProductsKeyboard(category, page),
+    });
+  } catch {
+    await ctx.reply(text, {
+      reply_markup: keyboards.getProductsKeyboard(category, page),
+    });
+  }
+}
+
 // ==================== START COMMAND ====================
 
 bot.command("start", async (ctx: Context) => {
@@ -113,15 +147,16 @@ bot.command("start", async (ctx: Context) => {
   }
 });
 
-// ==================== MAIN MENU ====================
+// ==================== MESSAGE HANDLER ====================
 
 bot.on("message:text", async (ctx: Context) => {
   const text = ctx.message.text;
   const userId = ctx.from.id;
+  const user = ctx.from;
   const client = await getPool().connect();
   
   try {
-    // Check admin reply mode
+    // Check admin reply mode first
     if (adminReplyState.has(userId)) {
       if (text === "/cancel" || text.toLowerCase() === "отмена") {
         adminReplyState.delete(userId);
@@ -209,6 +244,7 @@ bot.on("message:text", async (ctx: Context) => {
       }
         
       case "📞 Связаться с менеджером":
+        userContext.set(userId, { ...userContext.get(userId), waitingForMessage: true });
         await ctx.reply(
           "📞 Связь с менеджером\n\n" +
           "Опишите ваш вопрос или пожелание:\n" +
@@ -217,7 +253,6 @@ bot.on("message:text", async (ctx: Context) => {
             reply_markup: keyboards.getBackKeyboard("manager_cancel"),
           }
         );
-        userContext.set(userId, { ...userContext.get(userId), waitingForMessage: true });
         break;
         
       default:
@@ -270,7 +305,7 @@ bot.on("message:text", async (ctx: Context) => {
   }
 });
 
-// ==================== CALLBACK QUERIES ====================
+// ==================== CALLBACK QUERY HANDLER ====================
 
 bot.on("callback_query:data", async (ctx: Context) => {
   const data = ctx.callbackQuery.data;
@@ -328,7 +363,6 @@ bot.on("callback_query:data", async (ctx: Context) => {
       case "clear_cart":
         await clearCart(client, userId);
         await ctx.answerCallbackQuery("🗑️ Корзина очищена");
-        // Refresh cart
         await ctx.editMessageText("🛒 Ваша корзина пуста\n\nДобавьте товары из каталога!", {
           reply_markup: keyboards.getBackKeyboard("main_menu"),
         });
@@ -347,7 +381,7 @@ bot.on("callback_query:data", async (ctx: Context) => {
           message += `• ${item.product_name} x${item.quantity} — ${item.price * item.quantity}₽\n`;
         }
         message += `\n━━━━━━━━━━━━━━━━\nК оплате: ${total} руб.\n\n`;
-        message += "Нажмите 'Подтвердить и оплатить' для перехода к оплате.";
+        message += "Нажмите 'Подтвердить и оплатить' для оформления заказа.";
         
         await ctx.editMessageText(message, {
           reply_markup: keyboards.getCheckoutKeyboard(),
@@ -372,9 +406,8 @@ bot.on("callback_query:data", async (ctx: Context) => {
         await clearCart(client, userId);
         await updateOrderStatus(client, orderId, "confirmed");
         
-        await ctx.reply(`✅ Заказ #${orderId} подтвержден!\n\nСумма: ${total} руб.\n\nМенеджер свяжется с вами для уточнения деталей оплаты.`);
+        await ctx.reply(`✅ Заказ #${orderId} подтвержден!\n\nСумма: ${total} руб.\n\nМенеджер свяжется с вами для уточнения деталей.`);
         
-        // Notify admin
         await notifyAdmin(
           ctx,
           `🔔 Новый заказ #${orderId}\nПользователь: ${ctx.from?.first_name}\nСумма: ${total} руб.`
@@ -411,14 +444,13 @@ bot.on("callback_query:data", async (ctx: Context) => {
         break;
       }
         
-      case "admin_all_orders": {
+      case "admin_all_orders":
         if (!isAdmin(userId)) {
           await ctx.answerCallbackQuery("❌ Доступ запрещен", { show_alert: true });
           return;
         }
         await ctx.answerCallbackQuery("Функция в разработке", { show_alert: true });
         break;
-      }
         
       case "admin_support_requests": {
         if (!isAdmin(userId)) {
@@ -436,12 +468,13 @@ bot.on("callback_query:data", async (ctx: Context) => {
         break;
       }
         
+      // Category selection
       default:
-        // Category selection
         if (data.startsWith("category_")) {
           const category = data.replace("category_", "");
           userContext.set(userId, { category, page: 0 });
           await showProductsPage(ctx, category, 0);
+          await ctx.answerCallbackQuery();
           return;
         }
         
@@ -451,6 +484,7 @@ bot.on("callback_query:data", async (ctx: Context) => {
           const category = parts[1];
           const page = parseInt(parts[2]);
           await showProductsPage(ctx, category, page);
+          await ctx.answerCallbackQuery();
           return;
         }
         
@@ -717,39 +751,6 @@ bot.on("callback_query:data", async (ctx: Context) => {
   }
 });
 
-// Helper function for products page
-async function showProductsPage(ctx: Context, category: string, page: number): Promise<void> {
-  const products = PRODUCTS[category] || [];
-  const totalPages = products.length > 0 
-    ? Math.ceil(products.length / ITEMS_PER_PAGE) 
-    : 1;
-  
-  if (page < 0) page = 0;
-  if (page >= totalPages) page = totalPages - 1;
-  
-  const startIdx = page * ITEMS_PER_PAGE;
-  const endIdx = startIdx + ITEMS_PER_PAGE;
-  const pageProducts = products.slice(startIdx, endIdx);
-  
-  const categoryName = CATEGORIES[category] || category;
-  let text = `📂 ${categoryName}\nСтраница ${page + 1} из ${totalPages}\n\n`;
-  
-  for (let i = startIdx + 1; i <= Math.min(endIdx, products.length); i++) {
-    const product = products[i - 1];
-    text += `${i}. ${product.name} — ${product.price}₽\n`;
-  }
-  
-  try {
-    await ctx.editMessageText(text, {
-      reply_markup: keyboards.getProductsKeyboard(category, page),
-    });
-  } catch {
-    await ctx.reply(text, {
-      reply_markup: keyboards.getProductsKeyboard(category, page),
-    });
-  }
-}
-
 // ==================== ADMIN COMMAND ====================
 
 bot.command("admin", async (ctx: Context) => {
@@ -772,7 +773,7 @@ bot.catch((err) => {
 // ==================== WEBHOOK & SERVER ====================
 
 if (isWebhook) {
-  // Webhook mode for Deno Deploy / Hugging Face
+  // Webhook mode for Deno Deploy
   
   // Initialize database first
   console.log("Initializing database pool...");
@@ -803,21 +804,17 @@ if (isWebhook) {
   });
 } else {
   // Polling mode for local development
-  // Note: Deno Deploy doesn't support polling, this is for local testing only
   console.log("Starting bot in polling mode (local development only)...");
   
-  // Initialize database
   await initPool(config.databaseUrl);
   console.log("Database connected");
   
-  // Set bot commands
   await bot.api.setMyCommands([
     { command: "start", description: "Запустить бота" },
     { command: "admin", description: "Панель администратора" },
     { command: "cancel", description: "Отменить действие" },
   ]);
   
-  // Start polling
   bot.start({
     drop_pending_updates: true,
   });
