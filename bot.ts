@@ -773,16 +773,22 @@ bot.catch((err) => {
 
 if (isWebhook) {
   // Webhook mode for Deno Deploy / Hugging Face
-  const handler = webhookCallback(bot, "std/http");
   
+  // Initialize database first
+  console.log("Initializing database pool...");
+  await initPool(config.databaseUrl);
+  console.log("Database pool initialized!");
+  
+  const handler = webhookCallback(bot, "std/http");
+
   Deno.serve(async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
-    
+
     // Health check
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
       return new Response("OK");
     }
-    
+
     // Webhook endpoint
     if (req.method === "POST" && url.pathname === `/webhook/${config.botToken}`) {
       try {
@@ -792,7 +798,7 @@ if (isWebhook) {
         return new Response("Error", { status: 500 });
       }
     }
-    
+
     return new Response("Not Found", { status: 404 });
   });
 } else {
