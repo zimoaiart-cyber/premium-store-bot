@@ -1,0 +1,39 @@
+# Dependencies
+deno.lock
+vendor/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.db-journal
+bot.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+dist/
+build/
+
+# Testing
+coverage/
+
+# Temporary
+tmp/
+temp/

@@ -1,21 +1,38 @@
 {
   "name": "premium-store-bot",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "exports": "./bot.ts",
   "tasks": {
     "start": "deno run --allow-net --allow-env --allow-read bot.ts",
-    "dev": "deno run --allow-net --allow-env --allow-read --watch bot.ts"
+    "dev": "deno run --allow-net --allow-env --allow-read --watch bot.ts",
+    "test": "deno test --allow-net --allow-env --allow-read tests/",
+    "lint": "deno lint",
+    "fmt": "deno fmt"
   },
   "compilerOptions": {
-    "lib": ["deno.ns", "dom"]
+    "lib": ["deno.ns", "dom"],
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true
   },
   "lint": {
     "rules": {
-      "tags": ["recommended"]
-    }
+      "tags": ["recommended", "jsx-runtime"]
+    },
+    "exclude": ["tests/"]
   },
   "fmt": {
     "indentWidth": 2,
-    "lineWidth": 100
+    "lineWidth": 100,
+    "singleQuote": false,
+    "trailingCommas": "es5"
+  },
+  "test": {
+    "include": ["tests/"]
+  },
+  "imports": {
+    "grammy": "https://deno.land/x/grammy@v1.19.0/mod.ts",
+    "i18next": "https://deno.land/x/i18next@v23.7.13/index.js",
+    "redis": "https://deno.land/x/redis@v0.32.2/mod.ts"
   }
 }
