@@ -17,7 +17,7 @@
   },
   "lint": {
     "rules": {
-      "tags": ["recommended", "jsx-runtime"]
+      "tags": ["recommended"]
     },
     "exclude": ["tests/"]
   },
@@ -29,10 +29,5 @@
   },
   "test": {
     "include": ["tests/"]
-  },
-  "imports": {
-    "grammy": "https://deno.land/x/grammy@v1.19.0/mod.ts",
-    "i18next": "https://deno.land/x/i18next@v23.7.13/index.js",
-    "redis": "https://deno.land/x/redis@v0.32.2/mod.ts"
   }
 }

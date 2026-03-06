@@ -1,11 +1,13 @@
 /**
- * Cache Service with Redis
+ * Cache Service (In-Memory)
  * For high-performance data caching
+ * Note: Redis removed for Deno Deploy compatibility
  */
 
-import { Redis } from "https://deno.land/x/redis@v0.32.2/mod.ts";
+let cacheEnabled = false;
 
-let redisClient: Redis | null = null;
+// In-memory cache as fallback
+const memoryCache = new Map<string, { value: unknown; expiry: number }>();
 
 export interface CacheConfig {
   host: string;
@@ -18,90 +20,72 @@ export async function initCache(config?: CacheConfig): Promise<void> {
   const redisUrl = Deno.env.get("REDIS_URL");
   
   if (redisUrl) {
-    redisClient = await Redis.connect(redisUrl);
-    console.log("✅ Redis connected");
-    return;
+    // Redis not available on Deno Deploy, skip
+    console.log("ℹ️ Redis URL found but not available on Deno Deploy, using in-memory cache");
   }
   
-  if (config) {
-    redisClient = await Redis.connect({
-      hostname: config.host,
-      port: config.port,
-      password: config.password,
-      db: config.db ?? 0,
-    });
-    console.log("✅ Redis connected");
-    return;
-  }
+  // Enable in-memory cache
+  cacheEnabled = true;
+  console.log("✅ In-memory cache enabled");
   
-  console.log("ℹ️ Redis not configured, caching disabled");
+  // Cleanup expired entries every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, data] of memoryCache.entries()) {
+      if (data.expiry < now) {
+        memoryCache.delete(key);
+      }
+    }
+  }, 300000);
 }
 
-export function getCache(): Redis | null {
-  return redisClient;
+export function getCache(): Map<string, { value: unknown; expiry: number }> | null {
+  return cacheEnabled ? memoryCache : null;
 }
 
 export async function closeCache(): Promise<void> {
-  if (redisClient) {
-    redisClient.close();
-    redisClient = null;
-    console.log("Redis connection closed");
-  }
+  memoryCache.clear();
+  cacheEnabled = false;
+  console.log("Cache closed");
 }
 
 // Cache helpers
 export async function get<T>(key: string): Promise<T | null> {
-  if (!redisClient) return null;
+  if (!cacheEnabled) return null;
   
-  try {
-    const data = await redisClient.get(key);
-    if (!data) return null;
-    return JSON.parse(data) as T;
-  } catch (error) {
-    console.error("Cache get error:", error);
+  const data = memoryCache.get(key);
+  if (!data || data.expiry < Date.now()) {
+    memoryCache.delete(key);
     return null;
   }
+  
+  return data.value as T;
 }
 
 export async function set<T>(
   key: string,
   value: T,
-  ttlSeconds?: number
+  ttlSeconds: number = 3600
 ): Promise<void> {
-  if (!redisClient) return;
+  if (!cacheEnabled) return;
   
-  try {
-    const data = JSON.stringify(value);
-    if (ttlSeconds) {
-      await redisClient.set(key, data, { ex: ttlSeconds });
-    } else {
-      await redisClient.set(key, data);
-    }
-  } catch (error) {
-    console.error("Cache set error:", error);
-  }
+  const expiry = Date.now() + (ttlSeconds * 1000);
+  memoryCache.set(key, { value, expiry });
 }
 
 export async function del(key: string): Promise<void> {
-  if (!redisClient) return;
+  if (!cacheEnabled) return;
   
-  try {
-    await redisClient.del(key);
-  } catch (error) {
-    console.error("Cache delete error:", error);
-  }
+  memoryCache.delete(key);
 }
 
 export async function invalidatePattern(pattern: string): Promise<void> {
-  if (!redisClient) return;
+  if (!cacheEnabled) return;
   
-  try {
-    const keys = await redisClient.keys(pattern);
-    if (keys.length > 0) {
-      await redisClient.del(...keys);
+  for (const key of memoryCache.keys()) {
+    if (key.includes(pattern)) {
+      memoryCache.delete(key);
     }
-  } catch (error) {
-    console.error("Cache invalidate error:", error);
   }
 }
 
