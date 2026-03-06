@@ -51,9 +51,13 @@ export function createRateLimiter(config: Partial<RateLimitConfig> = {}) {
     // Check if user is blocked
     if (userLimit.blockedUntil && now < userLimit.blockedUntil) {
       const remainingSeconds = Math.ceil((userLimit.blockedUntil - now) / 1000);
-      await ctx.reply(
-        `⚠️ Слишком много запросов. Пожалуйста, подождите ${remainingSeconds} сек.`,
-      );
+      try {
+        await ctx.reply(
+          `⚠️ Слишком много запросов. Пожалуйста, подождите ${remainingSeconds} сек.`,
+        );
+      } catch {
+        // Ignore reply errors
+      }
       return;
     }
     
@@ -70,16 +74,16 @@ export function createRateLimiter(config: Partial<RateLimitConfig> = {}) {
     // Check if limit exceeded
     if (userLimit.count > finalConfig.maxRequests) {
       userLimit.blockedUntil = now + finalConfig.blockDurationMs;
-      await ctx.reply(
-        `⚠️ Превышен лимит запросов (${finalConfig.maxRequests} в минуту). ` +
-        `Вы заблокированы на ${finalConfig.blockDurationMs / 1000 / 60} мин.`,
-      );
+      try {
+        await ctx.reply(
+          `⚠️ Превышен лимит запросов (${finalConfig.maxRequests} в минуту). ` +
+          `Вы заблокированы на ${finalConfig.blockDurationMs / 1000 / 60} мин.`,
+        );
+      } catch {
+        // Ignore reply errors
+      }
       return;
     }
-    
-    // Add rate limit info to headers (for debugging)
-    ctx.response.header("X-RateLimit-Limit", String(finalConfig.maxRequests));
-    ctx.response.header("X-RateLimit-Remaining", String(finalConfig.maxRequests - userLimit.count));
     
     await next();
   };
