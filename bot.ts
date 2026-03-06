@@ -64,7 +64,6 @@ import { t, getUserLanguage, type Language } from "./utils/i18n.ts";
 import { createRateLimiter } from "./middlewares/rateLimiter.ts";
 
 // Services
-import { initCache, get, set as cacheSet, closeCache, recordCacheHit, recordCacheMiss } from "./services/cache.ts";
 import {
   getHealthStatus,
   generatePrometheusMetrics,
@@ -963,14 +962,7 @@ if (isWebhook) {
   console.log("📊 Initializing database pool...");
   await initPool(config.databaseUrl);
   console.log("✅ Database pool initialized!");
-  
-  // Try to initialize Redis cache (optional)
-  try {
-    await initCache();
-  } catch (e) {
-    console.log("ℹ️ Redis not available, caching disabled");
-  }
-  
+
   const handler = webhookCallback(bot, "std/http");
 
   Deno.serve(async (req: Request): Promise<Response> => {
